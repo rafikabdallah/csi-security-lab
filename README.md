@@ -121,9 +121,26 @@ docker compose up -d
 ```
 
 CTFd is served on port **8000**. Open `http://<vm-ip>:8000` and complete the
-setup wizard (event name, admin account, User mode). Then, in the admin panel,
-create the four challenges and upload the generated files, using each
-challenge's `README.md` for the description, points, hints, and flag.
+setup wizard (event name, admin account, User mode).
+
+### 6. Load the challenges
+
+There are two ways to get the four challenges into CTFd:
+
+**Fast path — import the template (recommended).** The repo includes
+`ctfd-template.zip`, a sanitized CTFd export containing all four challenge
+definitions (names, descriptions, categories, points, hints). In the admin
+panel go to **Config → Backup → Import** and upload it. Then, for each
+challenge, set the real flag (the template ships them blanked as
+`CSI{REPLACE_ME}`) and upload the generated file from that challenge's `dist/`
+folder. See [CTFD_IMPORT.md](CTFD_IMPORT.md) for details.
+
+**Manual path.** Create each challenge by hand in the admin panel, using each
+challenge's `README.md` for the description, points, hints, and flag, and
+uploading its generated file.
+
+> Flags and challenge files are supplied manually in both paths, by design:
+> shipping either would leak answers into the public repository.
 
 ---
 
@@ -137,6 +154,8 @@ csi-security-lab/
 ├── README.md
 ├── ARCHITECTURE.md           # design decisions & security reasoning
 ├── BUILD_LOG.md              # phase-by-phase build record
+├── ctfd-template.zip         # sanitized CTFd import (no flags/accounts)
+├── CTFD_IMPORT.md            # how to import the template
 ├── screenshots/
 └── challenges/
     ├── flags.env             # gitignored — flag values
