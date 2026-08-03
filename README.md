@@ -1,182 +1,189 @@
-# CSI Terminal Chat
+# CSI Security Lab — Self-Hosted CTF Platform
 
-A multi-client group chat server over raw TCP sockets. Terminal clients,
-no web framework, no HTTP, no external dependencies — Python standard
-library only.
+A self-hosted [CTFd](https://ctfd.io/) instance with four custom beginner
+challenges, deployed with Docker Compose on a single Ubuntu Server VM. Built
+to teach cybersecurity fundamentals — Linux, cryptography, packet analysis,
+and log analysis — to a student club audience.
 
-Built as a portfolio project to demonstrate socket programming, concurrency,
-and applied security engineering.
-
-![CSI Terminal Chat](docs/interface.png)
+![Homepage](screenshots/home.png)
 
 ---
 
-## Features
+## What it is
 
-- **Raw TCP sockets** with a custom length-prefixed binary protocol
-- **Thread-per-client** concurrency with lock-guarded shared state
-- **PBKDF2-HMAC-SHA256** password hashing with per-user random salts
-- **Rooms** — join, list, and see who is present
-- **Private messaging** between any two online users
-- **Structured security logging** with rotation and severity levels
-- **Graceful shutdown** — abrupt client death never affects other clients
+A small, fully reproducible Capture The Flag platform. Players register an
+account, browse challenges grouped by category, download a static file for
+each challenge, solve it on their own machine, and submit the flag. There are
+no per-challenge live containers — challenges are delivered as downloadable
+static files, which keeps the attack surface minimal and the deployment simple.
 
-Multiple clients connected simultaneously from the server VM and from a
-Windows host on the same LAN:
+**Four challenges, one per category:**
 
-![Multiple clients](docs/conversation.png)
+| Category | Challenge | Skill taught |
+|---|---|---|
+| Linux | Hidden in Plain Sight | Hidden files, `ls -la`, navigation |
+| Cryptography | Layers | Base64 + ROT13 decoding chain |
+| Packet Analysis | Clear Text | Reading plaintext HTTP in Wireshark |
+| Log Analysis | Who Got In | Spotting an SSH brute-force in `auth.log` |
 
----
-
-## Requirements
-
-- Python 3.11 or newer
-- No third-party packages
-
-Verified on Ubuntu Server 24.04 (server) and Windows 11 (client).
+![Challenges](screenshots/challenges.png)
 
 ---
 
-## Running it
+## Stack
 
-Clone on both machines:
+- **Ubuntu Server 24.04 LTS** (VMware Workstation VM)
+- **Docker + Docker Compose**
+- **CTFd** (official `ctfd/ctfd:3.8.6` image)
+- **MariaDB 10.11** (database) and **Redis 4** (cache), from the CTFd
+  reference compose file
+- Challenge files generated locally: pcap via **Scapy**, logs synthetically
+  generated in Python, crypto and Linux built with shell tooling
 
-```bash
-git clone https://github.com/rafikabdallah/csi-terminal-chat.git
-cd csi-terminal-chat
+---
+
+## Flag format
+
+All flags follow the format:
+
+```
+CSI{...}
 ```
 
-**Server** — binds to all interfaces on port 5000 by default:
+Flag *values* are never committed to this repository. They live in a
+gitignored `challenges/flags.env` file. Each challenge's `build.sh` reads its
+flag from that file and bakes it into the generated challenge file. This means:
 
-```bash
-python3 server/server.py
-python3 server/server.py --host 0.0.0.0 --port 5000    # explicit
-```
+- No flag ever appears in version control, in plaintext or inside a committed
+  artifact.
+- Anyone who clones this repo can regenerate every challenge with **their own**
+  flags by creating their own `flags.env`.
 
-**Client** — point it at the server's address:
-
-```bash
-python3 client/client.py --host 192.168.119.50
-python client\client.py --host 192.168.119.50          # Windows
-```
-
-If the server is on the same machine, `--host` can be omitted.
+See [ARCHITECTURE.md](ARCHITECTURE.md) for the reasoning behind this design.
 
 ---
 
-## Commands
+## Deployment
 
-| Command | Description |
+Reproducible from a clean VM. Requires Docker and the Docker Compose plugin.
+
+### 1. Clone
+
+```bash
+git clone https://github.com/rafikabdallah/csi-security-lab.git
+cd csi-security-lab
+```
+
+### 2. Create the infrastructure secrets file
+
+The compose file expects three secrets, supplied via a gitignored `.env`.
+Generate them:
+
+```bash
+cat > .env << EOF
+DB_ROOT_PASSWORD=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+DB_PASSWORD=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+CTFD_SECRET_KEY=$(python3 -c "import secrets; print(secrets.token_hex(32))")
+EOF
+chmod 600 .env
+```
+
+### 3. Create the challenge flags file
+
+```bash
+cat > challenges/flags.env << 'EOF'
+FLAG_LINUX=CSI{your_flag_here}
+FLAG_CRYPTO=CSI{your_flag_here}
+FLAG_PCAP=CSI{your_flag_here}
+FLAG_LOG=CSI{placeholder}
+EOF
+chmod 600 challenges/flags.env
+```
+
+> `FLAG_LOG` is overwritten automatically by the log challenge's build script,
+> which generates a random attacker IP and derives the flag from it.
+
+### 4. Generate the challenge files
+
+```bash
+bash challenges/01-linux/build.sh
+bash challenges/02-crypto/build.sh
+bash challenges/03-packet-analysis/build.sh
+bash challenges/04-log-analysis/build.sh
+```
+
+Each writes its player-facing file into `challenges/<name>/dist/`.
+
+### 5. Start the platform
+
+```bash
+docker compose up -d
+```
+
+CTFd is served on port **8000**. Open `http://<vm-ip>:8000` and complete the
+setup wizard (event name, admin account, User mode). Then, in the admin panel,
+create the four challenges and upload the generated files, using each
+challenge's `README.md` for the description, points, hints, and flag.
+
+---
+
+## Repository layout
+
+```
+csi-security-lab/
+├── docker-compose.yml        # CTFd + MariaDB + Redis, secrets externalized
+├── .env                      # gitignored — infra secrets
+├── .gitignore
+├── README.md
+├── ARCHITECTURE.md           # design decisions & security reasoning
+├── BUILD_LOG.md              # phase-by-phase build record
+├── screenshots/
+└── challenges/
+    ├── flags.env             # gitignored — flag values
+    ├── 01-linux/
+    │   ├── README.md         # player description, difficulty, hints, points
+    │   ├── SOLUTION.md       # write-up
+    │   ├── build.sh          # generates the challenge file from flags.env
+    │   └── dist/             # gitignored — generated player file
+    ├── 02-crypto/
+    ├── 03-packet-analysis/
+    └── 04-log-analysis/
+```
+
+Each challenge folder is self-contained: description, write-up, and a build
+script that regenerates the challenge file. `dist/` folders and `flags.env`
+are gitignored so no flag-bearing artifact is ever committed.
+
+---
+
+## Screenshots
+
+| | |
 |---|---|
-| `/register <username>` | Create an account (password prompted, never echoed) |
-| `/login <username>` | Log in |
-| `/join <room>` | Switch room — created on demand |
-| `/rooms` | List active rooms and occupant counts |
-| `/who` | List users in your current room |
-| `/msg <user> <text>` | Send a private message |
-| `/help` | Show the command list |
-| `/quit` | Disconnect |
-
-Anything not starting with `/` is sent as a chat message to your room.
-
-Usernames are 3–20 characters, letters/digits/underscore. Passwords are a
-minimum of 6 characters and are never transmitted on the command line or
-echoed to the terminal.
-
-**Room names are case-sensitive.** `/join dev` and `/join Dev` create two
-separate rooms, and users in one will not see messages from the other.
-Normalising room names to lowercase would be a straightforward
-improvement; this is recorded in the known limitations.
-
-Rooms are created on demand and deleted when the last occupant leaves,
-except for `general`:
-
-![Rooms](docs/rooms.png)
-
----
-
-## Lab environment
-
-Developed and tested across two real machines rather than loopback:
-
-```
-   Ubuntu Server 24.04 VM          Windows 11 host
-   192.168.119.50                  192.168.119.1
-   server + client                 client
-            └──── VMware NAT (vmnet8) ────┘
-```
-
-The server binds `0.0.0.0` so it is reachable on the LAN. `ufw` is set to
-default-deny inbound with only SSH and port 5000 explicitly allowed. Port
-5000 is above 1024, so the service runs unprivileged.
-
----
-
-## Protocol
-
-Every message is a JSON object framed with a 4-byte big-endian length header:
-
-```
-┌──────────────┬───────────────────────────┐
-│   4 bytes    │        N bytes            │
-│  N (uint32)  │      UTF-8 JSON           │
-└──────────────┴───────────────────────────┘
-```
-
-TCP is a byte stream with no message boundaries. Length-prefix framing
-makes each message unambiguous and is binary-safe, unlike delimiter-based
-framing. Full specification in [ARCHITECTURE.md](ARCHITECTURE.md).
-
----
-
-## Project structure
-
-```
-common/
-  protocol.py     framing, encode/decode, size limits
-  colors.py       ANSI output, auto-disabled when piped
-server/
-  server.py       accept loop, client threads, rooms, routing
-  auth.py         PBKDF2 hashing and constant-time verification
-  db.py           SQLite persistence, parameterised queries
-  logger.py       rotating file + console logging
-client/
-  client.py       two-threaded terminal client
-```
-
----
-
-## Security
-
-This is a security portfolio piece, and the design decisions behind it —
-password hashing choice, input validation, untrusted-length handling,
-impersonation defence, auth-failure logging as a detection signal — are
-documented in [ARCHITECTURE.md](ARCHITECTURE.md), along with the known
-limitations.
-
-Failed authentication and unauthenticated protocol activity are logged at
-`WARNING` with the source IP, so that `grep WARNING` yields an incident
-view. `UNAUTH action` entries are of particular interest: they are not
-reachable through the supplied client, so their presence indicates
-someone speaking the protocol with a hand-written tool.
-
-![Security event logging](docs/warning_chat_logs.png)
-
-**Note:** the protocol is unencrypted. Credentials and messages cross the
-network in plaintext. This is acceptable on an isolated lab network and
-documented as such; TLS is a prerequisite for any internet-facing
-deployment.
+| ![Home](screenshots/home.png) | ![Challenges](screenshots/challenges.png) |
+| ![Challenge modal](screenshots/challenge_example.png) | ![Scoreboard](screenshots/scoreboard.png) |
 
 ---
 
 ## Documentation
 
-- [ARCHITECTURE.md](ARCHITECTURE.md) — protocol spec, threading model,
-  security analysis, limitations
-- [BUILD_LOG.md](BUILD_LOG.md) — phase-by-phase build record and decisions
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** — why CTFd, why Docker, the
+  container / volume / network layout, isolation considerations, and what
+  would need to change before exposing this to a real network.
+- **[BUILD_LOG.md](BUILD_LOG.md)** — phase status, decisions, and blockers
+  recorded during the build.
 
 ---
 
-## Licence
+## Future improvements
 
-MIT — see [LICENSE](LICENSE).
+- Add a reverse proxy (nginx) with TLS for encrypted access.
+- Configure SMTP so email verification can be enabled.
+- Place the platform behind a segmented firewall (pfSense / VLANs) before any
+  real network exposure.
+- Expand to multiple challenges per category.
+- Automate challenge import via CTFd's API rather than the admin UI.
+
+---
+
+*Built as a cybersecurity portfolio project. Educational use.*
