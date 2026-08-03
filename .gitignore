@@ -1,0 +1,5 @@
+.env
+.data/
+ctfd-src/
+challenges/flags.env
+challenges/**/dist/
